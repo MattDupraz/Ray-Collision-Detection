@@ -1,2 +1,5 @@
 # Ray-Collision-Detection
-Collision detection between circles using ray tracing
+Proof of concept for ray-traced collision detection, use the code for any purpose you'd like,
+
+TODO:
+- two trajectory intersection (moving objects)
