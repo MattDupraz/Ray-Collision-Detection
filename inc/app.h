@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "ball.h"
+#include "math_utils.h"
 
 class App {	
 	public:
@@ -12,7 +13,7 @@ class App {
 
 		~App();
 
-		void add_ball(vec2f pos, float radius);
+		void add_ball(float radius, vec2f pos, vec2f vel = {0.0, 0.0});
 		void remove_ball(Ball* ball);
 		int start();
 
@@ -20,10 +21,20 @@ class App {
 		void draw();
 	private:
 		sf::RenderWindow window;
+		unsigned int width;
+		unsigned int height;
 
 		std::vector<Ball*> balls;
+
+		sf::Clock clock;
 
 		Ball* new_ball = nullptr;
 		Ball* dragged_ball = nullptr;
 		Ball* selected_ball = nullptr;
+
+		void event_resized(unsigned int width, unsigned int height);
+		void event_mouse_pressed(sf::Mouse::Button const& button,
+				vec2f const& pos);
+		void event_mouse_released(sf::Mouse::Button const& button,
+				vec2f const& pos);
 };

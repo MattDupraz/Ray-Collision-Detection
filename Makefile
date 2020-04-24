@@ -7,10 +7,10 @@ CFLAGS = -I./$(INCDIR)
 LIBS = -lsfml-graphics -lsfml-window -lsfml-system
 
 
-_HEADERS = app.h vec.h ball.h
+_HEADERS = app.h collisions.h math_utils.h ball.h
 HEADERS = $(patsubst %,$(INCDIR)/%,$(_HEADERS))
 
-_OBJECTS = app.o ball.o main.o
+_OBJECTS = app.o collisions.o math_utils.o ball.o main.o
 OBJECTS = $(patsubst %,$(OBJDIR)/%,$(_OBJECTS))
 
 TARGET = app

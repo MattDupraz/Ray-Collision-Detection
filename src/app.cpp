@@ -1,12 +1,17 @@
 #include "app.h"
-#include "math.h"
 
+#include "collisions.h"
+#include <algorithm>
+#include <utility>
 #include <iostream>
 
 App::App(unsigned int width, unsigned int height,
 		sf::String const& title)
-	: window(sf::VideoMode(width, height), title)
-{}
+	: window(sf::VideoMode(width, height), title),
+	width(width), height(height)
+{
+	clock.restart();
+}
 
 App::~App() {
 	for (Ball* b: balls) {
@@ -14,8 +19,8 @@ App::~App() {
 	}
 }
 
-void App::add_ball(vec2f pos, float radius) {
-	Ball* ball(new Ball {pos, radius});
+void App::add_ball(float radius, vec2f pos, vec2f vel) {
+	Ball* ball(new Ball(radius, pos, vel));
 	if (selected_ball == nullptr) {
 		selected_ball = ball;
 	}
@@ -40,45 +45,13 @@ int App::start() {
 			} if (event.type == sf::Event::Resized) {
 				unsigned int width = event.size.width;
 				unsigned int height = event.size.height;
-				sf::FloatRect visibleArea(0, 0, width, height);
-				window.setView(sf::View(visibleArea));
+				event_resized(width, height);
 			} if (event.type == sf::Event::MouseButtonPressed) {
-				vec2f mouse_pos {event.mouseButton.x, event.mouseButton.y};
-				if (event.mouseButton.button == sf::Mouse::Left) {
-					for (Ball* ball : balls) {
-						if ((ball->pos - mouse_pos).norm() < ball->radius) {
-							dragged_ball = ball;
-							selected_ball = ball;
-							break;
-						}
-					}	
-					if (dragged_ball == nullptr) {
-						new_ball = new Ball{mouse_pos, 0};
-						selected_ball = new_ball;
-						balls.push_back(new_ball);
-					}
-				}
-				if (event.mouseButton.button == sf::Mouse::Right) {
-					for (Ball* ball : balls) {
-						if ((ball->pos - mouse_pos).norm() < ball->radius) {
-							remove_ball(ball);
-							delete ball;
-
-							selected_ball = nullptr;
-							new_ball = nullptr;
-							dragged_ball = nullptr;
-							break;
-						}
-					}	
-				}
+				vec2f mouse_pos(event.mouseButton.x, event.mouseButton.y);
+				event_mouse_pressed(event.mouseButton.button, mouse_pos);
 			} if (event.type == sf::Event::MouseButtonReleased) {	
-				if (event.mouseButton.button == sf::Mouse::Left) {
-					if (new_ball != nullptr && new_ball->radius < 1.0f) {
-						remove_ball(new_ball);
-					}
-					new_ball = nullptr;
-					dragged_ball = nullptr;
-				}
+				vec2f mouse_pos(event.mouseButton.x, event.mouseButton.y);
+				event_mouse_released(event.mouseButton.button, mouse_pos);
 			}
 		}
 
@@ -93,69 +66,152 @@ int App::start() {
 	return 0;
 }
 
+void App::event_resized(unsigned int w, unsigned int h) {
+	width = w;
+	height = h;
+	sf::FloatRect visibleArea(0, 0, width, height);
+	window.setView(sf::View(visibleArea));
+}
+
+void App::event_mouse_pressed(sf::Mouse::Button const& button, vec2f const& pos)
+{
+	if (button == sf::Mouse::Left) {
+		for (Ball* ball : balls) {
+			if (ball->contains(pos)) {
+				dragged_ball = ball;
+				selected_ball = ball;
+				break;
+			}
+		}	
+		if (dragged_ball == nullptr) {
+			new_ball = new Ball(5.0, pos);
+			selected_ball = new_ball;
+			balls.push_back(new_ball);
+		}
+	}
+	if (button == sf::Mouse::Right) {
+		for (Ball* ball : balls) {
+			if (ball->contains(pos)) {
+				remove_ball(ball);
+				delete ball;
+
+				selected_ball = nullptr;
+				new_ball = nullptr;
+				dragged_ball = nullptr;
+				break;
+			}
+		}	
+	}
+}
+
+void App::event_mouse_released(sf::Mouse::Button const& button, vec2f const& pos)
+{
+	if (button == sf::Mouse::Left) {
+		new_ball = nullptr;
+		dragged_ball = nullptr;
+	}
+}
+
 void App::update() {
-	sf::Vector2i sf_mouse_pos(sf::Mouse::getPosition(window));
-	vec2f mouse_pos { float(sf_mouse_pos.x), float(sf_mouse_pos.y) };
+	float dt = clock.restart().asSeconds();
+
+	vec2f mouse_pos(sf::Mouse::getPosition(window));
 
 	if (dragged_ball != nullptr) {
-		dragged_ball->pos = mouse_pos;
+		dragged_ball->set_pos(mouse_pos);
 	}	
 
 	if (new_ball != nullptr) {
-		new_ball->radius = (new_ball->pos - mouse_pos).norm();
+		new_ball->set_radius(std::max(5.0f,
+					norm(new_ball->get_pos() - mouse_pos)));
+	}
+
+
+	std::vector<Ball*> queue(balls);
+	while (!queue.empty()) {
+		bool found(false);
+		float best_time;
+		std::size_t best_A;
+		std::size_t best_B;
+
+		for (std::size_t i(0); i < queue.size(); ++i)
+		for (std::size_t j(i + 1); j < queue.size(); ++j) {
+			float time(get_collision_time(*queue[i], *queue[j]));
+			if (time >= 0 && (!found || time < best_time)) {
+				best_time = time;
+				best_A = i;
+				best_B = j;
+				found = true;
+			}
+		}
+
+		if (!found) {
+			while (!queue.empty()) {
+				Ball* ball = queue.back();
+				float time = (get_boundary_collision_time(*ball, width, height));
+				ball->set_ghost_pos(time);
+				queue.pop_back();
+			}
+		} else {
+			Ball* ball_A(queue[best_A]);
+			Ball* ball_B(queue[best_B]);
+			float time_A(get_boundary_collision_time(*ball_A, width, height));
+			float time_B(get_boundary_collision_time(*ball_B, width, height));
+			if ((time_A != 0.0 && time_A < best_time)
+					|| (time_B != 0.0 && time_B < best_time)) {
+				ball_A->set_ghost_pos(time_A);
+				ball_B->set_ghost_pos(time_B);
+			} else {
+				ball_A->set_ghost_pos(best_time);
+				ball_B->set_ghost_pos(best_time);
+			}
+			queue.erase(queue.begin() + best_B);
+			queue.erase(queue.begin() + best_A);
+		}
+	}
+
+	for (Ball* ball: balls) {
+		vec2f pos(ball->get_pos());
+		vec2f vel(ball->get_velocity());
+		float radius(ball->get_radius());
+
+		ball->set_pos(pos + dt * vel);
+		if ((pos.x > width - radius && vel.x > 0.0f)
+				|| (pos.x < radius && vel.x < 0.0f)) {
+			ball->set_velocity(vec2f(-vel.x, vel.y));
+		}	
+		if ((pos.y > height - radius && vel.y > 0.0f)
+				|| (pos.y < radius && vel.y < 0.0f)) {
+			ball->set_velocity(vec2f(vel.x, -vel.y));
+		}		
+	}
+
+	
+	for (std::size_t i(0); i < balls.size(); ++i)
+	for (std::size_t j(i+1); j < balls.size(); ++j)
+	{
+		Ball* ball_A(balls[i]);
+		Ball* ball_B(balls[j]);
+
+		vec2f pos_A(ball_A->get_pos());
+		vec2f pos_B(ball_B->get_pos());
+		vec2f vel_A(ball_A->get_velocity());
+		vec2f vel_B(ball_B->get_velocity());
+		float R_A(ball_A->get_radius());
+		float R_B(ball_B->get_radius());
+		
+		if (norm(pos_A - pos_B) < R_A + R_B) {
+			vec2f AB = pos_B - pos_A;
+			AB = AB * (1.0f / norm(AB));
+			ball_A->set_velocity(vel_A - 2.0f*dot(AB, vel_A) * AB);
+			vec2f BA = -AB;
+			ball_B->set_velocity(vel_B - 2.0f*dot(BA, vel_B) * BA);
+		}
 	}
 }
 
 void App::draw() {
-	sf::Vector2i sf_mouse_pos(sf::Mouse::getPosition(window));
-	vec2f mouse_pos { float(sf_mouse_pos.x), float(sf_mouse_pos.y) };
-
-	sf::CircleShape circle;
 	for (Ball* ball : balls) {
-		circle.setRadius(ball->radius);
-		circle.setPosition(ball->pos.x() - ball->radius,
-				ball->pos.y() - ball->radius);
-		if ((ball->pos - mouse_pos).norm() < ball->radius) {
-			circle.setFillColor(sf::Color::Red);
-		} else if (ball == selected_ball){
-			circle.setFillColor(sf::Color::Yellow);
-		} else {
-			circle.setFillColor(sf::Color::Blue);
-		}
-		window.draw(circle);
-	}
-
-	if (selected_ball != nullptr) {
-		sf::Vertex line[] =
-		{
-			 sf::Vertex(sf::Vector2f(selected_ball->pos.x(), selected_ball->pos.y())),
-			 sf::Vertex(sf::Vector2f(mouse_pos.x(), mouse_pos.y()))
-		};
-
-		window.draw(line, 2, sf::Lines);
-
-		vec2f collision_pos(mouse_pos);
-		for (Ball* ball: balls) {
-			if (ball == selected_ball)
-				continue;
-			vec2f new_collision_pos(selected_ball->get_collision_pos(mouse_pos, *ball));
-			if ((selected_ball->pos - new_collision_pos).norm2()
-					< (selected_ball->pos - collision_pos).norm2()) {
-				collision_pos = new_collision_pos;
-			}
-		}
-
-		circle.setPosition(mouse_pos.x() - selected_ball->radius,
-				mouse_pos.y() - selected_ball->radius);
-		circle.setRadius(selected_ball->radius);
-		circle.setFillColor(sf::Color::Transparent);
-		circle.setOutlineColor(sf::Color::White);
-		circle.setOutlineThickness(1.0f);
-		window.draw(circle);
-
-		circle.setPosition(collision_pos.x() - selected_ball->radius,
-				collision_pos.y() - selected_ball->radius);
-		circle.setOutlineColor(sf::Color::Red);
-		window.draw(circle);
+		ball->draw(window);
 	}
 }
