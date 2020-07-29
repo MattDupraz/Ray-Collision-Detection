@@ -118,6 +118,7 @@ void App::update() {
 	vec2f mouse_pos(sf::Mouse::getPosition(window));
 
 	if (dragged_ball != nullptr) {
+		dragged_ball->set_velocity((1.0f/dt) * (mouse_pos - dragged_ball->get_pos()));
 		dragged_ball->set_pos(mouse_pos);
 	}	
 
@@ -171,6 +172,8 @@ void App::update() {
 	}
 
 	for (Ball* ball: balls) {
+		if (ball == dragged_ball) continue;
+
 		vec2f pos(ball->get_pos());
 		vec2f vel(ball->get_velocity());
 		float radius(ball->get_radius());
@@ -206,6 +209,14 @@ void App::update() {
 			ball_A->set_velocity(vel_A - 2.0f*dot(AB, vel_A) * AB);
 			vec2f BA = -AB;
 			ball_B->set_velocity(vel_B - 2.0f*dot(BA, vel_B) * BA);
+			if (ball_A == dragged_ball) {
+				ball_B->set_pos(pos_B - BA);
+			} else if (ball_B == dragged_ball) {
+				ball_A->set_pos(pos_A - AB);
+			} else {
+				ball_A->set_pos(pos_A - 0.5f*AB);
+				ball_B->set_pos(pos_B - 0.5f*BA);
+			}
 		}
 	}
 }

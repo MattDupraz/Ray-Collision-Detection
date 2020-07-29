@@ -7,6 +7,7 @@ int main()
 
 	app.add_ball(50, {60, 60}, {300, 200});
 	app.add_ball(40, {400, 400}, {-150, -200});
+	app.add_ball(40, {30, 400}, {175, -325});
 
 	return app.start();
 }
